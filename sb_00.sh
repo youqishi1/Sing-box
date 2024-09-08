@@ -13,12 +13,15 @@ reading() { read -p "$(red "$1")" "$2"; }
 export LC_ALL=C
 USERNAME=$(whoami)
 HOSTNAME=$(hostname)
-export UUID=${UUID:-'739a9f64-5d9e-4055-9645-2a2e38a0aeac'}
+export UUID=${UUID:-'bc97f674-c578-4940-9234-0a1da46041b9'}
 export NEZHA_SERVER=${NEZHA_SERVER:-''} 
 export NEZHA_PORT=${NEZHA_PORT:-'5555'}     
 export NEZHA_KEY=${NEZHA_KEY:-''} 
 export ARGO_DOMAIN=${ARGO_DOMAIN:-''}   
 export ARGO_AUTH=${ARGO_AUTH:-''}
+export VMESS_PORT=${VMESS_PORT:-'40000'}
+export TUIC_PORT=${TUIC_PORT:-'50000'}
+export HY2_PORT=${HY2_PORT:-'60000'}
 export CFIP=${CFIP:-'www.visa.com.tw'} 
 export CFPORT=${CFPORT:-'443'} 
 
@@ -26,120 +29,12 @@ export CFPORT=${CFPORT:-'443'}
 [ -d "$WORKDIR" ] || (mkdir -p "$WORKDIR" && chmod 777 "$WORKDIR")
 ps aux | grep $(whoami) | grep -v "sshd\|bash\|grep" | awk '{print $2}' | xargs -r kill -9 > /dev/null 2>&1
 
-read_vmess_port() {
-    while true; do
-        reading "请输入vmess端口 (面板开放的tcp端口): " vmess_port
-        if [[ "$vmess_port" =~ ^[0-9]+$ ]] && [ "$vmess_port" -ge 1 ] && [ "$vmess_port" -le 65535 ]; then
-            green "你的vmess端口为: $vmess_port"
-            break
-        else
-            yellow "输入错误，请重新输入面板开放的TCP端口"
-        fi
-    done
-}
-
-read_hy2_port() {
-    while true; do
-        reading "请输入hysteria2端口 (面板开放的UDP端口): " hy2_port
-        if [[ "$hy2_port" =~ ^[0-9]+$ ]] && [ "$hy2_port" -ge 1 ] && [ "$hy2_port" -le 65535 ]; then
-            green "你的hysteria2端口为: $hy2_port"
-            break
-        else
-            yellow "输入错误，请重新输入面板开放的UDP端口"
-        fi
-    done
-}
-
-read_tuic_port() {
-    while true; do
-        reading "请输入Tuic端口 (面板开放的UDP端口): " tuic_port
-        if [[ "$tuic_port" =~ ^[0-9]+$ ]] && [ "$tuic_port" -ge 1 ] && [ "$tuic_port" -le 65535 ]; then
-            green "你的tuic端口为: $tuic_port"
-            break
-        else
-            yellow "输入错误，请重新输入面板开放的UDP端口"
-        fi
-    done
-}
-
-read_nz_variables() {
-  if [ -n "$NEZHA_SERVER" ] && [ -n "$NEZHA_PORT" ] && [ -n "$NEZHA_KEY" ]; then
-      green "使用自定义变量哪吒运行哪吒探针"
-      return
-  else
-      reading "是否需要安装哪吒探针？【y/n】: " nz_choice
-      [[ -z $nz_choice ]] && return
-      [[ "$nz_choice" != "y" && "$nz_choice" != "Y" ]] && return
-      reading "请输入哪吒探针域名或ip：" NEZHA_SERVER
-      green "你的哪吒域名为: $NEZHA_SERVER"
-      reading "请输入哪吒探针端口（回车跳过默认使用5555）：" NEZHA_PORT
-      [[ -z $NEZHA_PORT ]] && NEZHA_PORT="5555"
-      green "你的哪吒端口为: $NEZHA_PORT"
-      reading "请输入哪吒探针密钥：" NEZHA_KEY
-      green "你的哪吒密钥为: $NEZHA_KEY"
-  fi
-}
-
-install_singbox() {
-echo -e "${yellow}本脚本同时四协议共存${purple}(vmess-ws,vmess-ws-tls(argo),hysteria2,tuic)${re}"
-echo -e "${yellow}开始运行前，请确保在面板${purple}已开放3个端口，一个tcp端口和两个udp端口${re}"
-echo -e "${yellow}面板${purple}Additional services中的Run your own applications${yellow}已开启为${purplw}Enabled${yellow}状态${re}"
-reading "\n确定继续安装吗？【y/n】: " choice
-  case "$choice" in
-    [Yy])
-        cd $WORKDIR
-        read_nz_variables
-        read_vmess_port
-        read_hy2_port
-        read_tuic_port
-        argo_configure
-        generate_config
-        download_singbox
-        get_links
-      ;;
-    [Nn]) exit 0 ;;
-    *) red "无效的选择，请输入y或n" && menu ;;
-  esac
-}
-
-uninstall_singbox() {
-  reading "\n确定要卸载吗？【y/n】: " choice
-    case "$choice" in
-        [Yy])
-	      ps aux | grep $(whoami) | grep -v "sshd\|bash\|grep" | awk '{print $2}' | xargs -r kill -9 2>/dev/null
-       	      rm -rf $WORKDIR
-	      clear
-       	      green “四合一已完全卸载”
-          ;;
-        [Nn]) exit 0 ;;
-    	  *) red "无效的选择，请输入y或n" && menu ;;
-    esac
-}
-
-kill_all_tasks() {
-reading "\n清理所有进程将退出ssh连接，确定继续清理吗？【y/n】: " choice
-  case "$choice" in
-    [Yy]) killall -9 -u $(whoami) ;;
-       *) menu ;;
-  esac
-}
-
-# Generating argo Config
 argo_configure() {
+clear
+purple "正在安装中,请稍等..."
   if [[ -z $ARGO_AUTH || -z $ARGO_DOMAIN ]]; then
-      reading "是否需要使用固定argo隧道？【y/n】: " argo_choice
-      [[ -z $argo_choice ]] && return
-      [[ "$argo_choice" != "y" && "$argo_choice" != "Y" && "$argo_choice" != "n" && "$argo_choice" != "N" ]] && { red "无效的选择，请输入y或n"; return; }
-      if [[ "$argo_choice" == "y" || "$argo_choice" == "Y" ]]; then
-          reading "请输入argo固定隧道域名: " ARGO_DOMAIN
-          green "你的argo固定隧道域名为: $ARGO_DOMAIN"
-          reading "请输入argo固定隧道密钥（Json或Token）: " ARGO_AUTH
-          green "你的argo固定隧道密钥为: $ARGO_AUTH"
-	  echo -e "${red}注意：${purple}使用token，需要在cloudflare后台设置隧道端口和面板开放的tcp端口一致${re}"
-      else
-          green "ARGO隧道变量未设置，将使用临时隧道"
-          return
-      fi
+    green "ARGO_DOMAIN or ARGO_AUTH is empty,use quick tunnel"
+    return
   fi
 
   if [[ $ARGO_AUTH =~ TunnelSecret ]]; then
@@ -151,7 +46,7 @@ protocol: http2
 
 ingress:
   - hostname: $ARGO_DOMAIN
-    service: http://localhost:$vmess_port
+    service: http://localhost:$VMESS_PORT
     originRequest:
       noTLSVerify: true
   - service: http_status:404
@@ -161,11 +56,10 @@ EOF
   fi
 }
 
-# Generating Configuration Files
 generate_config() {
 
-  openssl ecparam -genkey -name prime256v1 -out "private.key"
-  openssl req -new -x509 -days 3650 -key "private.key" -out "cert.pem" -subj "/CN=$USERNAME.serv00.net"
+    openssl ecparam -genkey -name prime256v1 -out "private.key"
+    openssl req -new -x509 -days 3650 -key "private.key" -out "cert.pem" -subj "/CN=$USERNAME.serv00.net"
 
   cat > config.json << EOF
 {
@@ -213,7 +107,7 @@ generate_config() {
        "tag": "hysteria-in",
        "type": "hysteria2",
        "listen": "::",
-       "listen_port": $hy2_port,
+       "listen_port": $HY2_PORT,
        "users": [
          {
              "password": "$UUID"
@@ -233,7 +127,7 @@ generate_config() {
       "tag": "vmess-ws-in",
       "type": "vmess",
       "listen": "::",
-      "listen_port": $vmess_port,
+      "listen_port": $VMESS_PORT,
       "users": [
       {
         "uuid": "$UUID"
@@ -249,7 +143,7 @@ generate_config() {
       "tag": "tuic-in",
       "type": "tuic",
       "listen": "::",
-      "listen_port": $tuic_port,
+      "listen_port": $TUIC_PORT,
       "users": [
         {
           "uuid": "$UUID",
@@ -364,7 +258,6 @@ generate_config() {
 EOF
 }
 
-# Download Dependency Files
 download_singbox() {
   ARCH=$(uname -m) && DOWNLOAD_DIR="." && mkdir -p "$DOWNLOAD_DIR" && FILE_INFO=()
   if [ "$ARCH" == "arm" ] || [ "$ARCH" == "arm64" ] || [ "$ARCH" == "aarch64" ]; then
@@ -452,7 +345,7 @@ if [ -e "$(basename ${FILE_MAP[bot]})" ]; then
     elif [[ $ARGO_AUTH =~ TunnelSecret ]]; then
       args="tunnel --edge-ip-version auto --config tunnel.yml run"
     else
-      args="tunnel --edge-ip-version auto --no-autoupdate --protocol http2 --logfile boot.log --loglevel info --url http://localhost:$vmess_port"
+      args="tunnel --edge-ip-version auto --no-autoupdate --protocol http2 --logfile boot.log --loglevel info --url http://localhost:$VMESS_PORT"
     fi
     nohup ./"$(basename ${FILE_MAP[bot]})" $args >/dev/null 2>&1 &
     sleep 2
@@ -498,48 +391,33 @@ ISP=$(curl -s https://speed.cloudflare.com/meta | awk -F\" '{print $26"-"$18}' |
 sleep 1
 yellow "注意：v2ray或其他软件的跳过证书验证需设置为true,否则hy2或tuic节点可能不通\n"
 cat > list.txt <<EOF
-vmess://$(echo "{ \"v\": \"2\", \"ps\": \"$ISP\", \"add\": \"$IP\", \"port\": \"$vmess_port\", \"id\": \"$UUID\", \"aid\": \"0\", \"scy\": \"none\", \"net\": \"ws\", \"type\": \"none\", \"host\": \"\", \"path\": \"/vmess?ed=2048\", \"tls\": \"\", \"sni\": \"\", \"alpn\": \"\", \"fp\": \"\"}" | base64 -w0)
+vmess://$(echo "{ \"v\": \"2\", \"ps\": \"$ISP\", \"add\": \"$IP\", \"port\": \"$VMESS_PORT\", \"id\": \"$UUID\", \"aid\": \"0\", \"scy\": \"none\", \"net\": \"ws\", \"type\": \"none\", \"host\": \"\", \"path\": \"/vmess?ed=2048\", \"tls\": \"\", \"sni\": \"\", \"alpn\": \"\", \"fp\": \"\"}" | base64 -w0)
 
 vmess://$(echo "{ \"v\": \"2\", \"ps\": \"$ISP\", \"add\": \"$CFIP\", \"port\": \"$CFPORT\", \"id\": \"$UUID\", \"aid\": \"0\", \"scy\": \"none\", \"net\": \"ws\", \"type\": \"none\", \"host\": \"$argodomain\", \"path\": \"/vmess?ed=2048\", \"tls\": \"tls\", \"sni\": \"$argodomain\", \"alpn\": \"\", \"fp\": \"\"}" | base64 -w0)
 
-hysteria2://$UUID@$IP:$hy2_port/?sni=www.bing.com&alpn=h3&insecure=1#$ISP
+hysteria2://$UUID@$IP:$HY2_PORT/?sni=www.bing.com&alpn=h3&insecure=1#$ISP
 
-tuic://$UUID:admin123@$IP:$tuic_port?sni=www.bing.com&congestion_control=bbr&udp_relay_mode=native&alpn=h3&allow_insecure=1#$ISP
+tuic://$UUID:admin123@$IP:$TUIC_PORT?sni=www.bing.com&congestion_control=bbr&udp_relay_mode=native&alpn=h3&allow_insecure=1#$ISP
 EOF
 cat list.txt
 purple "\n$WORKDIR/list.txt saved successfully"
 purple "Running done!"
-sleep 2
+yellow "Serv00|ct8老王sing-box一键四协议安装脚本(vmess-ws|vmess-ws-tls(argo)|hysteria2|tuic)\n"
+echo -e "${green}issues反馈：${re}${yellow}https://github.com/eooce/Sing-box/issues${re}\n"
+echo -e "${green}反馈论坛：${re}${yellow}https://bbs.vps8.me${re}\n"
+echo -e "${green}TG反馈群组：${re}${yellow}https://t.me/vps888${re}\n"
+purple "转载请著名出处，请勿滥用\n"
+sleep 3 
 rm -rf boot.log config.json sb.log core tunnel.yml tunnel.json fake_useragent_0.2.0.json
+
 }
 
-menu() {
-   clear
-   echo ""
-   purple "=== Serv00|ct8老王sing-box一键四合一安装脚本 ===\n"
-   echo -e "${green}脚本地址：${re}${yellow}https://github.com/eooce/Sing-box${re}\n"
-   echo -e "${green}反馈论坛：${re}${yellow}https://bbs.vps8.me${re}\n"
-   echo -e "${green}TG反馈群组：${re}${yellow}https://t.me/vps888${re}\n"
-   purple "转载请著名出处，请勿滥用\n"
-   green "1. 安装sing-box"
-   echo  "==============="
-   red "2. 卸载sing-box"
-   echo  "==============="
-   green "3. 查看节点信息"
-   echo  "==============="
-   yellow "4. 清理所有进程"
-   echo  "==============="
-   red "0. 退出脚本"
-   echo "==========="
-   reading "请输入选择(0-3): " choice
-   echo ""
-    case "${choice}" in
-        1) install_singbox ;;
-        2) uninstall_singbox ;; 
-        3) cat $WORKDIR/list.txt ;; 
-	4) kill_all_tasks ;;
-        0) exit 0 ;;
-        *) red "无效的选项，请输入 0 到 4" ;;
-    esac
+install_singbox() {
+    clear
+    cd $WORKDIR
+    argo_configure
+    generate_config
+    download_singbox
+    get_links
 }
-menu
+install_singbox
